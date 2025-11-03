@@ -632,9 +632,9 @@ cd alphalab
 # Install dependencies
 pip install -r requirements.txt
 
-# Set up API keys (free)
-# - FRED: https://fred.stlouisfed.org/docs/api/api_key.html (30 seconds)
-# - OpenAI: https://platform.openai.com/api-keys (requires account)
+# Set up API keys
+# - FRED: https://fred.stlouisfed.org/docs/api/api_key.html 
+# - OpenAI: https://platform.openai.com/api-keys
 export FRED_API_KEY="your_fred_key"
 export OPENAI_API_KEY="your_openai_key"
 
