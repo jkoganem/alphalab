@@ -24,7 +24,9 @@ This project implements an end-to-end pipeline for automated trading strategy de
 2. **LLM Strategy Generator**: Iterative refinement system that learns from backtest results to improve strategy quality
 3. **Strategy Database**: Persistent storage enabling few-shot learning from prior attempts
 
-**Key findings**: LLM-generated strategies currently struggle to achieve production-quality performance (target Sharpe >= 0.70), highlighting fundamental challenges in applying foundation models to quantitative finance without domain-specific alignment. Current limitations and proposed solutions are discussed in [Limitations and Future Work](#limitations-and-future-work).
+**Key findings**: LLM-generated strategies currently struggle to achieve production-quality performance (target Sharpe >= 0.70), highlighting fundamental challenges in applying foundation models to quantitative finance without domain-specific alignment. 
+
+Current limitations and proposed solutions are discussed in [Limitations and Future Work](#limitations-and-future-work).
 
 ---
 
@@ -95,7 +97,7 @@ The system implements an iterative refinement loop with feedback from backtest e
                 │  Score = 0.35xSharpe + 0.20xDD + 0.15xSortino  │
                 │         + 0.10xCalmar + 0.05xWinRate           │
                 │         + 0.10xConsistency + 0.05xTailRisk     │
-                │  Pass threshold: Score >= 50/100           │
+                │  Pass threshold: Score >= 50/100               │
                 └────────────────────┬───────────────────────────┘
                                      │
                 ┌────────────────────▼───────────────────────────┐
@@ -105,7 +107,7 @@ The system implements an iterative refinement loop with feedback from backtest e
                 │    For each factor f:                          │
                 │      - Remove f from spec                      │
                 │      - Re-backtest modified strategy           │
-                │      - Measure Delta Sharpe, Delta Drawdown            │
+                │      - Measure Delta Sharpe, Delta Drawdown    │
                 │      - Classify: HELPS vs HURTS                │
                 └────────────────────┬───────────────────────────┘
                                      │
@@ -134,7 +136,7 @@ The system implements an iterative refinement loop with feedback from backtest e
                                                  │
                                          ┌───────▼────────────────┐
                                          │ Check improvement:     │
-                                         │ Deltascore >= min_delta?    │
+                                         │ Delta >= min_delta?    │
                                          └───┬──────────┬─────────┘
                                              │          │
                                         YES──┘          └──NO
