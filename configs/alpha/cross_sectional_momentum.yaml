@@ -1,0 +1,25 @@
+# Cross-Sectional Momentum Alpha Configuration
+# Ranks stocks by relative performance
+
+alpha:
+  type: CrossSectionalMomentum
+  lookback_days: 126  # 6-month momentum
+  neutralization: zscore  # Z-score normalization for ranking
+  cooldown_days: 21  # 1-month cooldown to avoid short-term reversals
+
+portfolio:
+  optimizer: InverseVolatilityOptimizer
+  vol_lookback: 60
+  normalize: true
+
+risk:
+  max_gross_exposure: 2.0  # Allow 2x leverage
+  max_position_size: 0.15  # Max 15% in any single position
+  volatility_target: 0.15  # Target 15% annual volatility
+
+execution:
+  rebalance_frequency: weekly
+  costs:
+    fees_bps: 2.0
+    slippage_bps: 5.0
+    borrow_bps: 30.0

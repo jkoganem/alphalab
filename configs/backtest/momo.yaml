@@ -1,0 +1,76 @@
+seed: 42
+
+universe:
+  tickers:
+    - "AAPL"
+    - "MSFT"
+    - "AMZN"
+    - "GOOG"
+    - "META"
+    - "NVDA"
+    - "TSLA"
+    - "SPY"
+    - "QQQ"
+  exclude_illiquid: true
+  min_price: 5.0
+  min_market_cap: null
+
+data:
+  path: "data/ohlcv.parquet"
+  interval: "1d"
+  returns: "log"
+
+alpha:
+  name: "momentum_xs"
+  params:
+    lookback_days: 126
+    winsor_pct: 0.01
+    neutralization: "zscore_by_sector"
+
+signal:
+  method: "rank_long_short"
+  params:
+    long_pct: 0.2
+    short_pct: 0.2
+    neutralize_beta_to: "SPY"
+
+portfolio:
+  method: "inverse_vol"
+  params:
+    vol_lookback: 60
+    cap_weight_clip: 0.05
+
+risk:
+  volatility_target: 0.15
+  max_gross_exposure: 1.5
+  max_net_exposure: 0.5
+  max_turnover_pct: 40
+  max_position_size: 0.1
+
+execution:
+  delay: "next_open"
+  lot_size: 1
+  slippage_model: "sqrt_impact"
+  slippage_bps: 5.0
+  impact_coeff: 0.1
+  fees_bps: 1.0
+  borrow_bps: 30.0
+
+validate:
+  cv: "purged_kfold"
+  n_splits: 5
+  embargo_days: 5
+  wf_folds: 6
+  wf_train_days: null
+  wf_test_days: null
+
+report:
+  path: "out/momo_report.html"
+  include:
+    - "summary"
+    - "equity_curve"
+    - "drawdowns"
+    - "factor_returns"
+    - "exposures"
+    - "significance"
+  format: "html"

@@ -1,0 +1,21 @@
+# Walk-Forward Validation Configuration
+# Realistic simulation of live trading with expanding/rolling windows
+
+validation:
+  type: WalkForward
+  train_period_days: 252  # 1-year training window
+  test_period_days: 63  # 3-month test window
+  mode: expanding  # expanding or rolling
+  min_train_size: 126  # Minimum 6 months training data
+
+  # Walk-forward simulates real-world deployment
+  # where models are trained on historical data
+  # and tested on future unseen data
+
+metrics:
+  - sharpe_ratio
+  - sortino_ratio
+  - max_drawdown
+  - total_return
+  - annual_volatility
+  - information_ratio

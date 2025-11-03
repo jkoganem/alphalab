@@ -1,0 +1,847 @@
+"""LLM-powered strategy code generation using Claude or GPT."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from typing import Any
+
+import anthropic
+from openai import OpenAI
+
+from alphalab.ai.spec_compiler import FactorSpecCompiler
+
+
+class StrategyGenerator:
+    """Generate trading strategy code using LLMs (Claude or GPT)."""
+
+    def __init__(
+        self,
+        provider: str = "openai",  # 'openai' or 'anthropic'
+        api_key: str | None = None,
+        model: str | None = None,
+        use_spec_compiler: bool = True,  # NEW: Use JSON spec compilation (recommended)
+        batch_size: int = 5,  # NEW: Batch multiple specs in one API call
+    ):
+        """
+        Initialize strategy generator.
+
+        Args:
+            provider: 'openai' or 'anthropic'
+            api_key: API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY env var)
+            model: Model name (defaults to best for each provider)
+            use_spec_compiler: If True, use JSON spec -> compiler pipeline (guarantees best practices)
+            batch_size: Number of specs to generate per API call (default: 5, max: 20)
+        """
+        self.provider = provider.lower()
+        self.use_spec_compiler = use_spec_compiler
+        self.compiler = FactorSpecCompiler() if use_spec_compiler else None
+        self.batch_size = min(batch_size, 20)  # Cap at 20 for quality
+
+        if self.provider == "openai":
+            self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
+            self.model = model or "gpt-4o"  # Full model for better reasoning
+        elif self.provider == "anthropic":
+            self.client = anthropic.Anthropic(
+                api_key=api_key or os.getenv("ANTHROPIC_API_KEY")
+            )
+            self.model = model or "claude-3-5-sonnet-20241022"
+        else:
+            msg = f"Unknown provider: {provider}. Use 'openai' or 'anthropic'"
+            raise ValueError(msg)
+
+    def generate_ideas(
+        self,
+        n_ideas: int = 10,
+        market_context: str | None = None,
+        available_data: dict | None = None,
+        preferences: Any | None = None,  # StrategyPreferences object
+    ) -> list[dict[str, Any]]:
+        """
+        Generate strategy ideas (plain English descriptions).
+
+        Args:
+            n_ideas: Number of strategy ideas to generate
+            market_context: Description of market conditions
+            available_data: Dict describing what data is available
+            preferences: StrategyPreferences object with user requirements (NEW!)
+
+        Returns:
+            List of strategy idea dicts with keys:
+                - name: Strategy name
+                - hypothesis: Why it should work
+                - features: What data to use
+                - expected_conditions: When it works best
+                - risks: Key risks
+        """
+        prompt = self._build_idea_prompt(n_ideas, market_context, available_data, preferences)
+
+        if self.provider == "openai":
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.9,  # Higher for creativity
+            )
+            content = response.choices[0].message.content
+        else:  # anthropic
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                temperature=0.9,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            content = response.content[0].text
+
+        # Parse JSON response
+        return self._parse_ideas_response(content)
+
+    def generate_code(
+        self,
+        idea: dict[str, Any],
+        data_schema: dict | None = None,
+    ) -> str:
+        """
+        Convert strategy idea to Python code.
+
+        Args:
+            idea: Strategy idea dict from generate_ideas()
+            data_schema: Description of available data columns
+
+        Returns:
+            Python code as string
+        """
+        # Use spec compiler pipeline if enabled
+        if self.use_spec_compiler:
+            return self._generate_code_from_spec(idea, data_schema)
+
+        # Otherwise use legacy free-form code generation
+        prompt = self._build_code_prompt(idea, data_schema)
+
+        if self.provider == "openai":
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,  # Lower for precise code
+            )
+            content = response.choices[0].message.content
+        else:  # anthropic
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=8192,
+                temperature=0.3,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            content = response.content[0].text
+
+        # Extract code from markdown
+        return self._extract_code(content)
+
+    def _generate_code_from_spec(
+        self,
+        idea: dict[str, Any],
+        data_schema: dict | None = None,
+    ) -> str:
+        """
+        Generate code using JSON spec -> compiler pipeline.
+
+        This is the recommended approach (ChatGPT Pro recommendation #1).
+        Guarantees: cross-sectional, multi-factor, risk-normalized, robust z-score, clipped.
+
+        Args:
+            idea: Strategy idea dict
+            data_schema: Available columns
+
+        Returns:
+            Compiled Python code
+        """
+        # Step 1: Get JSON spec from LLM
+        spec = self._generate_factor_spec(idea, data_schema)
+
+        # Step 2: Validate spec
+        valid, issues = self.compiler.validate_spec(spec)
+        if not valid:
+            # If validation fails, try one more time with error feedback
+            spec = self._generate_factor_spec(
+                idea,
+                data_schema,
+                validation_errors=issues
+            )
+            valid, issues = self.compiler.validate_spec(spec)
+            if not valid:
+                # Fall back to error message in code
+                error_msg = "\\n".join(issues)
+                return f'''
+from __future__ import annotations
+import pandas as pd
+
+class InvalidSpec:
+    """Spec validation failed: {error_msg}"""
+    def score(self, features: pd.DataFrame) -> pd.DataFrame:
+        raise ValueError("Spec validation failed: {error_msg}")
+'''
+
+        # Step 3: Compile spec to code
+        class_name = self._to_class_name(idea['name'])
+        code = self.compiler.compile_to_code(spec, class_name)
+
+        # Store spec in code as a comment for later retrieval
+        self._last_generated_spec = spec
+
+        return code
+
+    def get_last_spec(self) -> dict | None:
+        """Get the last generated spec (for LOFO analysis)."""
+        return getattr(self, '_last_generated_spec', None)
+
+    def generate_strategies_batch(
+        self,
+        ideas: list[dict[str, Any]],
+        data_schema: dict | None = None,
+    ) -> list[tuple[dict, str, dict | None]]:
+        """
+        Generate code for multiple ideas in a single batched API call.
+
+        This is MUCH more efficient than calling generate_code() individually:
+        - Before: N API calls for N ideas
+        - After: 1 API call for N ideas
+        - Savings: ~75% reduction in API calls
+
+        Args:
+            ideas: List of strategy idea dicts
+            data_schema: Description of available data columns
+
+        Returns:
+            List of (idea, code, spec) tuples. Spec is None if using legacy mode.
+        """
+        if not self.use_spec_compiler:
+            # Legacy mode: fall back to individual calls
+            return [(idea, self.generate_code(idea, data_schema), None) for idea in ideas]
+
+        # Batch spec generation
+        print(f"  [BATCH] Generating {len(ideas)} specs in 1 API call...")
+
+        try:
+            specs = self._generate_batch_specs(ideas, data_schema)
+
+            # Compile specs to code
+            results = []
+            for idea, spec in zip(ideas, specs):
+                # Validate spec
+                valid, issues = self.compiler.validate_spec(spec)
+
+                if valid:
+                    # Compile to code
+                    class_name = self.compiler._sanitize_identifier(idea["name"])
+                    code = self.compiler.compile_to_code(spec, class_name=class_name)
+                    results.append((idea, code, spec))
+                else:
+                    # Retry individual spec on validation failure
+                    print(f"  [RETRY] Spec validation failed for '{idea['name']}', retrying individually...")
+                    try:
+                        code = self.generate_code(idea, data_schema)
+                        spec_retry = self.get_last_spec()
+                        results.append((idea, code, spec_retry))
+                    except Exception as e:
+                        print(f"  [FAIL] Retry failed for '{idea['name']}': {e}")
+                        continue
+
+            return results
+
+        except Exception as e:
+            # Fall back to individual generation on batch failure
+            print(f"  [FALLBACK] Batch generation failed ({e}), falling back to individual calls...")
+            results = []
+            for idea in ideas:
+                try:
+                    code = self.generate_code(idea, data_schema)
+                    spec = self.get_last_spec()
+                    results.append((idea, code, spec))
+                except Exception as e2:
+                    print(f"  [FAIL] Individual generation failed for '{idea['name']}': {e2}")
+                    continue
+            return results
+
+    def _generate_batch_specs(
+        self,
+        ideas: list[dict[str, Any]],
+        data_schema: dict | None = None,
+    ) -> list[dict]:
+        """Generate factor specs for multiple ideas in one API call."""
+        available_columns = data_schema.get("columns", []) if data_schema else []
+
+        prompt = self._build_batch_spec_prompt(ideas, available_columns)
+
+        if self.provider == "openai":
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+            )
+            content = response.choices[0].message.content
+        else:  # anthropic
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=8192,
+                temperature=0.7,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            content = response.content[0].text
+
+        # Parse batch response
+        return self._parse_batch_specs_response(content, len(ideas))
+
+    def _build_batch_spec_prompt(self, ideas: list[dict], available_columns: list[str]) -> str:
+        """Build prompt for batch spec generation."""
+        ideas_json = json.dumps(ideas, indent=2)
+
+        return f"""Generate factor specifications for these {len(ideas)} strategy ideas.
+
+CRITICAL: Read these rules carefully. Validation will REJECT specs that violate them.
+
+════════════════════════════════════════════════════════════════════════════════
+AVAILABLE COLUMNS (use ONLY these - no exceptions):
+════════════════════════════════════════════════════════════════════════════════
+{json.dumps(available_columns, indent=2)}
+
+⚠️  FORBIDDEN OPERATIONS:
+   ❌ NO arithmetic on raw OHLCV: "open - close", "high - low", "close / open"
+   ❌ NO conditional expressions: "? :", "if", "||", "&&"
+   ❌ NO date/time operations: "month ==", "day ==", "year"
+   ❌ NO column creation: Use pre-computed features ONLY
+
+✅  VALID OPERATIONS:
+   ✓ Use column names directly: "ret_20d", "vol_20d", "rsi_14"
+   ✓ Negate with minus: "-ret_5d", "-mom_20d"
+   ✓ Multiply constants: "2.0", "-0.5"
+
+════════════════════════════════════════════════════════════════════════════════
+MANDATORY STRUCTURE (enforced by compiler):
+════════════════════════════════════════════════════════════════════════════════
+
+1. FACTORS: Each factor MUST have exactly these transforms in this order:
+   - "divide:vol_20d+0.01"     ← Risk normalization (REQUIRED)
+   - "cs_robust_zscore"         ← Cross-sectional z-score (REQUIRED)
+   - "winsor:-3,3"              ← Clip outliers (REQUIRED)
+
+2. COMBINE: Use weighted_mean with weights summing to 1.0
+   - Example: {{"method": "weighted_mean", "weights": [0.6, 0.4]}}
+
+3. POST: Must be exactly ["cs_rank_pct_centered", "clip:-2,2"]
+
+4. FAMILY: Must be "cross_sectional_rank"
+
+════════════════════════════════════════════════════════════════════════════════
+STRATEGY IDEAS TO IMPLEMENT:
+════════════════════════════════════════════════════════════════════════════════
+{ideas_json}
+
+════════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT:
+════════════════════════════════════════════════════════════════════════════════
+Return a JSON array with {len(ideas)} factor specs (one for each idea).
+Each spec must follow this EXACT structure:
+
+[
+  {{
+    "family": "cross_sectional_rank",
+    "factors": [
+      {{
+        "name": "momentum",
+        "expr": "ret_20d",
+        "transforms": ["divide:vol_20d+0.01", "cs_robust_zscore", "winsor:-3,3"]
+      }},
+      {{
+        "name": "reversal",
+        "expr": "-ret_5d",
+        "transforms": ["divide:vol_20d+0.01", "cs_robust_zscore", "winsor:-3,3"]
+      }}
+    ],
+    "combine": {{"method": "weighted_mean", "weights": [0.7, 0.3]}},
+    "post": ["cs_rank_pct_centered", "clip:-2,2"],
+    "rationale": "Combines momentum and mean-reversion for diversification"
+  }}
+]
+
+IMPORTANT: Return ONLY the JSON array. No markdown, no explanation, no comments."""
+
+    def _parse_batch_specs_response(self, content: str, expected_count: int) -> list[dict]:
+        """Parse batch spec generation response."""
+        # Extract JSON array
+        json_match = re.search(r'\[.*\]', content, re.DOTALL)
+        if not json_match:
+            raise ValueError("No JSON array found in response")
+
+        specs = json.loads(json_match.group(0))
+
+        if not isinstance(specs, list):
+            raise ValueError("Response is not a JSON array")
+
+        if len(specs) != expected_count:
+            print(f"  [WARNING] Expected {expected_count} specs, got {len(specs)}")
+
+        return specs
+
+    def _build_idea_prompt(
+        self,
+        n_ideas: int,
+        market_context: str | None,
+        available_data: dict | None,
+        preferences: Any | None = None,
+    ) -> str:
+        """Build prompt for idea generation."""
+        context = market_context or "General market conditions across multiple regimes"
+        data_desc = (
+            json.dumps(available_data, indent=2)
+            if available_data
+            else "OHLCV price data, volume, and basic technical indicators"
+        )
+
+        # Build user preferences section if provided
+        user_prefs_section = ""
+        if preferences is not None:
+            user_prefs_section = f"""
+USER PREFERENCES & REQUIREMENTS:
+{preferences.to_prompt()}
+
+IMPORTANT: Design strategies that align with the user's preferences above.
+This is critical - the strategies MUST respect the constraints and preferences specified.
+"""
+
+        # Default constraints if no preferences
+        default_constraints = """
+CONSTRAINTS:
+- Daily rebalancing maximum
+- Long-short market-neutral preferred
+- Maximum 50% turnover per day
+- Must be implementable with available data
+- Should work across multiple market regimes
+"""
+
+        constraints_section = (
+            user_prefs_section if preferences is not None else default_constraints
+        )
+
+        return f"""Generate {n_ideas} novel quantitative trading strategy ideas.
+
+MARKET CONTEXT:
+{context}
+
+AVAILABLE DATA:
+{data_desc}
+
+{constraints_section}
+
+For each strategy, provide:
+1. **Name**: Catchy, descriptive name
+2. **Hypothesis**: Why should this make money? (2-3 sentences)
+3. **Features**: What specific data/indicators to use
+4. **Expected Conditions**: When does this work best?
+5. **Risks**: What could make this fail?
+
+Return ONLY a JSON array with this structure:
+```json
+[
+  {{
+    "name": "Strategy Name",
+    "hypothesis": "Why it works...",
+    "features": ["feature1", "feature2", ...],
+    "expected_conditions": "Market conditions...",
+    "risks": ["risk1", "risk2", ...]
+  }},
+  ...
+]
+```
+
+Be creative! Think beyond standard momentum/mean-reversion. Consider:
+- Volatility patterns
+- Cross-sectional relationships
+- Fundamental ratios
+- Market microstructure
+- Regime switching
+- Multi-timeframe analysis
+
+Generate diverse, uncorrelated strategies that match the user's preferences."""
+
+    def _build_code_prompt(
+        self,
+        idea: dict[str, Any],
+        data_schema: dict | None,
+    ) -> str:
+        """Build prompt for code generation."""
+        schema_desc = (
+            json.dumps(data_schema, indent=2)
+            if data_schema
+            else "Standard OHLCV + technical indicators"
+        )
+
+        return f"""You are an expert quantitative developer. Implement this trading strategy in Python.
+
+STRATEGY IDEA:
+Name: {idea['name']}
+Hypothesis: {idea['hypothesis']}
+Features: {', '.join(idea['features'])}
+Conditions: {idea.get('expected_conditions', 'Various')}
+
+DATA SCHEMA:
+{schema_desc}
+
+REQUIREMENTS:
+1. Create a simple class (no inheritance needed)
+2. Must implement score(features: pd.DataFrame) -> pd.DataFrame method
+3. Return DataFrame with MultiIndex (date, symbol) and 'alpha' column (single column!)
+4. Alpha values should be normalized (use z-scores or ranks for cross-sectional strategies)
+5. Use ONLY data available at time t to predict returns at t+1 (no lookahead!)
+6. Include docstring explaining the logic
+7. Add parameter validation in __init__
+8. Handle edge cases (missing data, NaN, etc.) - fill NaN with 0
+
+CRITICAL DATA CONSTRAINT:
+- You MUST ONLY use columns that exist in the DATA SCHEMA above
+- DO NOT create new features or assume columns exist (like 'earnings', 'revenue_growth', 'correlation_with_sector_etf', etc.)
+- ONLY use the exact column names listed in the schema
+- If a column doesn't exist in the schema, you CANNOT use it - design your strategy using ONLY available columns
+
+EVALUATION CRITERIA (YOUR STRATEGY WILL BE JUDGED ON THESE):
+
+Your strategy will be backtested and must achieve MINIMUM thresholds to be ACCEPTED:
+
+**Hard Requirements (Must Pass ALL)**:
+1. Sharpe Ratio >= 0.50 (entry-level professional standard - THIS IS CRITICAL!)
+2. Maximum Drawdown < 40% (risk management)
+3. Win Rate >= 50% (consistency of positive days)
+4. Total Trades >= 100 (statistical significance)
+
+**Composite Score Target: 30/100 points**
+The score combines multiple factors:
+- Sharpe ratio (35% weight): Target 1.0+, max credit at 1.5
+- Sortino ratio (15% weight): Target 1.2+, downside deviation matters
+- Max drawdown (20% weight): Lower is better, target < 25%
+- Calmar ratio (10% weight): Return/drawdown ratio, target 2.0+
+- Win rate (5% weight): Percentage of positive days
+- Consistency (10% weight): Low volatility of rolling Sharpe
+- Tail risk (5% weight): Limit extreme negative days
+
+**DESIGN PRINCIPLES FOR HIGH SCORES**:
+1. Cross-sectional strategies (rank stocks each day) work better than time-series
+2. Combine multiple uncorrelated factors (momentum + value + volatility)
+3. Use robust normalization: .groupby(level='date').rank(pct=True) - 0.5
+4. Clip extreme values: .clip(-3, 3) after z-scoring
+5. Diversify across time: avoid concentrated bets on single days
+6. Balance return and risk: don't just maximize returns, minimize drawdowns
+
+**What Separates ACCEPT from REJECT**:
+- ACCEPTED: Sharpe 0.50+, drawdown < 35%, win rate 50%+, score >= 30
+- REJECTED: Sharpe < 0.50, drawdown > 40%, win rate < 50%, score < 30
+- EXCELLENT: Sharpe 0.80+, drawdown < 25%, win rate 55%+, score >= 50
+
+Examples of successful patterns:
+- Low-volatility momentum: momentum * (1 / volatility)
+- Multi-factor combo: (momentum + mean_reversion + volume) / 3
+- Risk-adjusted ranking: features.groupby(level='date').apply(lambda x: x['ret_20d'] / x['vol_20d']).rank(pct=True)
+
+STEP-BY-STEP INSTRUCTIONS:
+
+Step 1: Plan your strategy logic
+- Which columns from DATA SCHEMA will you use? (List them)
+- What calculation will produce alpha scores?
+- Is this cross-sectional (compare stocks on each date) or time-series (one stock over time)?
+- How will you ensure Sharpe > 0.8 and drawdown < 35%?
+
+Step 2: Write the code following this EXACT structure
+```python
+from __future__ import annotations
+
+import pandas as pd
+import numpy as np
+
+
+class {self._to_class_name(idea['name'])}:
+    \"\"\"
+    {idea['hypothesis']}
+
+    Strategy Logic:
+    - Step 1: [What features to extract]
+    - Step 2: [What calculation to perform]
+    - Step 3: [How to normalize/rank]
+
+    Parameters:
+        param1: Description (default: X)
+    \"\"\"
+
+    def __init__(self, param1: float = 1.0):
+        \"\"\"Initialize strategy with parameters.\"\"\"
+        self.param1 = param1
+
+    def score(self, features: pd.DataFrame) -> pd.DataFrame:
+        \"\"\"
+        Generate alpha scores.
+
+        Parameters:
+            features: MultiIndex DataFrame (date, symbol) with columns from DATA SCHEMA
+
+        Returns:
+            DataFrame with MultiIndex (date, symbol) and SINGLE 'alpha' column
+        \"\"\"
+        # Step 1: Extract feature columns (USE ONLY COLUMNS FROM DATA SCHEMA!)
+        # Example: momentum = features['ret_20d']
+
+        # Step 2: Calculate raw scores
+        # For CROSS-SECTIONAL (rank stocks each day):
+        #   raw_scores = features.groupby(level='date')['ret_20d'].rank(pct=True)
+        # For TIME-SERIES (individual stock over time):
+        #   raw_scores = features['ret_20d']
+
+        # Step 3: Normalize scores (z-score is recommended)
+        #   For cross-sectional: already normalized by rank
+        #   For time-series: z_scores = (raw_scores - raw_scores.mean()) / raw_scores.std()
+
+        # Step 4: Create output DataFrame (CRITICAL - EXACT FORMAT!)
+        result = pd.DataFrame(index=features.index)
+        result['alpha'] = z_scores  # MUST be named 'alpha'
+        result['alpha'] = result['alpha'].fillna(0)  # Handle NaN
+
+        return result  # Return DataFrame with ONE column 'alpha'
+```
+
+Step 3: Self-review your code
+Before submitting, verify:
+[ ] Uses ONLY columns from DATA SCHEMA (no made-up column names)
+[ ] Returns DataFrame with index=features.index (preserve MultiIndex)
+[ ] Returns EXACTLY one column named 'alpha' (not 'signal', 'score', etc.)
+[ ] Handles NaN values with fillna(0)
+[ ] No imports besides pandas and numpy
+[ ] Variable 'alpha_scores' or 'z_scores' exists before assigning to result['alpha']
+
+COMMON MISTAKES TO AVOID:
+- DO NOT create column named 'raw_alpha_scores' or 'signal' - ONLY 'alpha'
+- DO NOT try to set index manually - use features.index
+- DO NOT use columns not in DATA SCHEMA
+- DO NOT forget to define the variable before result['alpha'] = variable
+
+WORKING EXAMPLE (for reference):
+```python
+from __future__ import annotations
+
+import pandas as pd
+import numpy as np
+
+
+class SimpleMomentumStrategy:
+    \"\"\"Buy recent winners, sell recent losers using 20-day returns.\"\"\"
+
+    def __init__(self, lookback: int = 20):
+        self.lookback = lookback
+
+    def score(self, features: pd.DataFrame) -> pd.DataFrame:
+        # Use ret_20d column from DATA SCHEMA
+        momentum = features['ret_20d']
+
+        # Rank stocks cross-sectionally each day
+        alpha_scores = momentum.groupby(level='date').rank(pct=True) - 0.5
+
+        # Return in required format
+        result = pd.DataFrame(index=features.index)
+        result['alpha'] = alpha_scores
+        result['alpha'] = result['alpha'].fillna(0)
+        return result
+```
+
+Now generate YOUR strategy code following the same structure. Generate ONLY the complete, runnable Python code wrapped in ```python blocks.
+"""
+        return prompt
+
+    def _parse_ideas_response(self, content: str) -> list[dict[str, Any]]:
+        """Extract JSON ideas from LLM response."""
+        # Try to find JSON block
+        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            # Maybe it's just raw JSON
+            json_str = content
+
+        try:
+            ideas = json.loads(json_str)
+            if not isinstance(ideas, list):
+                raise ValueError("Expected list of ideas")
+            return ideas
+        except json.JSONDecodeError as e:
+            msg = f"Failed to parse LLM response as JSON: {e}\nContent: {content[:500]}"
+            raise ValueError(msg) from e
+
+    def _extract_code(self, content: str) -> str:
+        """Extract Python code from markdown blocks."""
+        # Try to find ```python block
+        code_match = re.search(r"```python\s*(.*?)\s*```", content, re.DOTALL)
+        if code_match:
+            return code_match.group(1).strip()
+
+        # Try generic ``` block
+        code_match = re.search(r"```\s*(.*?)\s*```", content, re.DOTALL)
+        if code_match:
+            return code_match.group(1).strip()
+
+        # Return as-is if no markdown blocks found
+        return content.strip()
+
+    def _generate_factor_spec(
+        self,
+        idea: dict[str, Any],
+        data_schema: dict | None = None,
+        validation_errors: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Generate a factor spec (JSON) from strategy idea.
+
+        This follows ChatGPT Pro's recommendation to have LLMs output structured JSON
+        instead of free-form code.
+
+        Args:
+            idea: Strategy idea dict
+            data_schema: Available columns
+            validation_errors: If retrying after validation failure, include errors
+
+        Returns:
+            Factor spec dict
+        """
+        prompt = self._build_spec_prompt(idea, data_schema, validation_errors)
+
+        if self.provider == "openai":
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,  # Medium temperature for creativity but structure
+            )
+            content = response.choices[0].message.content
+        else:  # anthropic
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                temperature=0.7,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            content = response.content[0].text
+
+        # Parse JSON spec
+        return self._parse_spec_response(content)
+
+    def _build_spec_prompt(
+        self,
+        idea: dict[str, Any],
+        data_schema: dict | None,
+        validation_errors: list[str] | None = None,
+    ) -> str:
+        """Build prompt for JSON factor spec generation (ChatGPT Pro template)."""
+        available_columns = self.compiler.available_columns if self.compiler else []
+
+        validation_feedback = ""
+        if validation_errors:
+            validation_feedback = f"""
+VALIDATION ERRORS FROM PREVIOUS ATTEMPT:
+{chr(10).join(f"- {err}" for err in validation_errors)}
+
+Please fix these issues in your new spec.
+"""
+
+        return f"""You output ONLY JSON for a cross-sectional long-only alpha factor specification.
+
+STRATEGY IDEA TO IMPLEMENT:
+Name: {idea['name']}
+Hypothesis: {idea['hypothesis']}
+Features to use: {', '.join(idea.get('features', []))}
+
+{validation_feedback}
+
+HARD RULES (ENFORCED BY COMPILER):
+- Use ONLY these columns: {json.dumps(available_columns)}
+- Must have 2-4 factors (for diversification)
+- Each factor MUST be divided by (vol_20d + 0.01) for risk normalization
+- Apply robust cross-sectional z-score to each factor
+- Winsorize each factor to [-3, 3]
+- Combine factors using weighted_mean (weights must sum to 1.0)
+- Post-process: cross-sectional rank_pct centered, then clip to [-2, 2]
+- Include a short "rationale" explaining the factor choices
+
+FACTOR FAMILIES TO CONSIDER:
+- low_vol_momentum: Momentum divided by volatility
+- weekly_reversal: Short-term mean reversion (-ret_5d)
+- volume_aided_reversal: Combine volume signals with reversal
+- momentum_x_vol_inversion: Long-term momentum with volatility weighting
+- rsi_blend: RSI-based signals combined with other factors
+
+TARGET METRICS (design for these):
+- Sharpe Ratio >= 0.50 (CRITICAL - this is the minimum threshold)
+- Maximum Drawdown < 40%
+- Win Rate >= 50%
+
+OUTPUT FORMAT (JSON only, no prose):
+```json
+{{
+  "family": "cross_sectional_rank",
+  "factors": [
+    {{
+      "name": "factor1_name",
+      "expr": "ret_20d",
+      "transforms": ["divide:vol_20d+0.01", "cs_robust_zscore", "winsor:-3,3"]
+    }},
+    {{
+      "name": "factor2_name",
+      "expr": "-ret_5d",
+      "transforms": ["divide:vol_20d+0.01", "cs_robust_zscore", "winsor:-3,3"]
+    }},
+    ...
+  ],
+  "combine": {{"method": "weighted_mean", "weights": [0.5, 0.5, ...]}},
+  "post": ["cs_rank_pct_centered", "clip:-2,2"],
+  "rationale": "Why this combination should achieve Sharpe >= 0.50..."
+}}
+```
+
+DESIGN PRINCIPLES FOR HIGH SHARPE:
+1. Cross-sectional ranking (not time-series) - compare stocks each day
+2. Multi-factor diversification - combine momentum + reversal + volume/volatility
+3. Risk normalization - divide by vol_20d to reduce drawdowns
+4. Robust statistics - use median/MAD z-scores, winsorize outliers
+5. Balanced weights - avoid over-concentration in one factor
+
+EXAMPLES OF SUCCESSFUL FACTOR COMBINATIONS:
+- Momentum + Short Reversal + Volume: [0.45, 0.35, 0.20]
+- Low-Vol Momentum + RSI + Mean Reversion: [0.40, 0.30, 0.30]
+- Multi-timeframe Momentum: ret_60d, ret_20d, -ret_5d with [0.35, 0.35, 0.30]
+
+Based on the strategy idea "{idea['name']}", generate a factor spec that implements the hypothesis:
+"{idea['hypothesis']}"
+
+Return ONLY valid JSON, no additional text."""
+
+    def _parse_spec_response(self, content: str) -> dict[str, Any]:
+        """Extract JSON spec from LLM response."""
+        # Try to find JSON block
+        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            # Try generic ``` block
+            json_match = re.search(r"```\s*(.*?)\s*```", content, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # Maybe it's just raw JSON
+                json_str = content
+
+        try:
+            spec = json.loads(json_str)
+            if not isinstance(spec, dict):
+                raise ValueError("Expected dict spec")
+            return spec
+        except json.JSONDecodeError as e:
+            msg = f"Failed to parse spec as JSON: {e}\nContent: {content[:500]}"
+            raise ValueError(msg) from e
+
+    def _to_class_name(self, strategy_name: str) -> str:
+        """Convert strategy name to PascalCase class name."""
+        # Remove special characters and split on spaces/underscores
+        words = re.sub(r"[^\w\s]", "", strategy_name).split()
+        # Capitalize first letter of each word
+        return "".join(word.capitalize() for word in words)

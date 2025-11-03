@@ -1,0 +1,137 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alpha-lab"
+version = "0.1.0"
+description = "Automated trading strategy generation using large language models with leakage aware backtesting engine."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Junichi Koganemaru"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "typer[all]>=0.9.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "yfinance>=0.2.0",
+    "scikit-learn>=1.3.0",
+    "scipy>=1.11.0",
+    "statsmodels>=0.14.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "pyarrow>=12.0.0",
+    "pyyaml>=6.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "hypothesis>=6.82.0",
+    "mypy>=1.5.0",
+    "ruff>=0.0.285",
+    "black>=23.7.0",
+    "pre-commit>=3.3.3",
+    "pandas-stubs>=2.0.0",
+    "types-PyYAML>=6.0.0",
+]
+llm = [
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+]
+
+[project.scripts]
+alphalab = "alphalab.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "D", "UP", "N", "ANN", "S", "B", "A", "C4", "DTZ", "T10", "EXE", "ISC", "ICN", "PIE", "PT", "RET", "SIM", "ARG", "PTH", "PD", "PGH", "PL", "TRY", "NPY", "RUF"]
+ignore = [
+    "D203",      # one-blank-line-before-class
+    "D212",      # multi-line-summary-first-line
+    "S101",      # use of assert
+    "PLR0913",   # too many arguments
+    "PLR2004",   # magic value comparison
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "ANN", "D"]
+"__init__.py" = ["D104"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true
+disallow_any_generics = true
+disallow_any_unimported = false  # pandas/numpy have complex typing
+disallow_subclassing_any = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "yfinance.*",
+    "scipy.*",
+    "statsmodels.*",
+    "sklearn.*",
+    "matplotlib.*",
+    "seaborn.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--showlocals",
+    "--maxfail=1",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+]
+
+[tool.coverage.run]
+source = ["src/alphalab"]
+omit = ["tests/*", "**/__init__.py"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false

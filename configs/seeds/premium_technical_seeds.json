@@ -1,0 +1,335 @@
+[
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "mtm126_core",
+        "expr": "ret_126d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "rsi_trend_health_28d",
+        "expr": "rsi_28d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "volume_confirmation_20d",
+        "expr": "volume_zscore_20d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.6, 0.25, 0.15] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Pure momentum: reward medium‑term winners, favor names with healthy RSI and supportive volume spikes that often accompany sustainable trends."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "mtm60_primary",
+        "expr": "ret_60d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "mtm20_secondary",
+        "expr": "ret_20d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "price_breakout_z20",
+        "expr": "zscore_20d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.5, 0.3, 0.2] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Momentum breakout stack: combine 3‑month and 1‑month momentum with positive price deviation to emphasize sustained breakouts."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "mtm252_compounder",
+        "expr": "ret_252d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "mtm126_support",
+        "expr": "ret_126d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "rsi_trend_health_14d",
+        "expr": "rsi_14d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.5, 0.3, 0.2] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Long‑horizon momentum: prioritize year‑long winners with supportive 6‑month trend and near‑term RSI to capture persistent compounding."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "short_reversal_5d",
+        "expr": "-ret_5d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "rsi_reversion_14d",
+        "expr": "-rsi_14d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "gap_fade_strength",
+        "expr": "-gap_z20",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.5, 0.3, 0.2] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Short‑term reversal: buy recent losers, prefer oversold RSI, and fade outsized gaps that frequently mean‑revert in large caps."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "one_day_shock_fade",
+        "expr": "-ret_1d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "extreme_price_deviation_snapback",
+        "expr": "-zscore_5d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "volume_spike_fade",
+        "expr": "-volume_zscore_20d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.4, 0.35, 0.25] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Shock absorber reversal: fade prior‑day price shocks, extreme short‑run deviations, and volume surges that often reflect transient liquidity imbalances."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "snapback_10d",
+        "expr": "-ret_10d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "range_expansion_candidate",
+        "expr": "hl_vol_20d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "mean_reversion_level_20d",
+        "expr": "-zscore_20d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.5, 0.3, 0.2] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "10‑day mean reversion: target names with recent declines, expanded ranges, and stretched prices likely to revert toward the 1‑month mean."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "one_month_mtm",
+        "expr": "ret_21d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "three_month_mtm",
+        "expr": "ret_60d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "positive_skew_filter",
+        "expr": "skew_60d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.45, 0.35, 0.2] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Momentum with skew tilt: emphasize 1–3 month winners and prefer names exhibiting positive return skew that often accompanies trend continuation."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "gap_signal_follow_through",
+        "expr": "gap_z20",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "mtm20_alignment",
+        "expr": "ret_20d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "volume_confirmation_60d",
+        "expr": "volume_zscore_60d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.25, 0.45, 0.3] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Gap‑assisted momentum: prioritize names with positive gaps that align with recent 1‑month momentum and are supported by elevated medium‑term volume."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "pure_momentum",
+        "expr": "ret_126d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [1.0]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Six-month momentum with cross-sectional ranking to capture persistent relative strength across the equity universe"
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "weekly_reversal",
+        "expr": "ret_5d",
+        "transforms": ["multiply:-1", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [1.0]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Weekly mean reversion exploiting short-term overreactions and liquidity provision opportunities"
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "momentum_core",
+        "expr": "ret_60d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "volume_confirmation",
+        "expr": "volume_zscore_60d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "rsi_filter",
+        "expr": "rsi_28d",
+        "transforms": ["subtract:50", "divide:50", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.5, 0.3, 0.2]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Three-month momentum confirmed by volume patterns and RSI strength for robust trend identification"
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "daily_reversal",
+        "expr": "ret_1d",
+        "transforms": ["multiply:-1", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "gap_reversal",
+        "expr": "gap_z20",
+        "transforms": ["multiply:-1", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.6, 0.4]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Intraday mean reversion combining daily price reversals with overnight gap fade patterns"
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "long_momentum",
+        "expr": "ret_252d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "liquidity_filter",
+        "expr": "adv_20d",
+        "transforms": ["cs_rank_pct", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.75, 0.25]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Annual momentum filtered by liquidity rankings to focus on tradeable winners with sustained outperformance"
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "monthly_momentum",
+        "expr": "ret_21d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "turnover_activity",
+        "expr": "turnover_20d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "skew_signal",
+        "expr": "skew_20d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.5, 0.25, 0.25]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Monthly momentum with turnover activity and positive skew bias to capture stocks with asymmetric upside potential"
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "ten_day_reversal",
+        "expr": "ret_10d",
+        "transforms": ["multiply:-1", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "rsi_oversold",
+        "expr": "rsi_14d",
+        "transforms": ["multiply:-1", "add:100", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.7, 0.3]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Two-week mean reversion enhanced by RSI oversold signals to identify bounce candidates"
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "quarter_momentum",
+        "expr": "ret_60d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "parkinson_volatility",
+        "expr": "parkinson_20d",
+        "transforms": ["multiply:-1", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "kurtosis_filter",
+        "expr": "kurt_60d",
+        "transforms": ["subtract:3", "multiply:-1", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.6, 0.2, 0.2]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Quarterly momentum favoring low intraday volatility and normal return distributions to avoid tail risk"
+  }
+]

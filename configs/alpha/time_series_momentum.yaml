@@ -1,0 +1,23 @@
+# Time-Series Momentum Alpha Configuration
+# Trend-following strategy based on absolute returns
+
+alpha:
+  type: TimeSeriesMomentum
+  lookback_days: 252  # 1-year momentum
+  cooldown_days: 42  # 2-month cooldown
+
+portfolio:
+  optimizer: EqualWeightOptimizer
+  normalize: true
+
+risk:
+  max_gross_exposure: 1.5
+  max_position_size: 0.20
+  volatility_target: 0.12  # More conservative 12% target
+
+execution:
+  rebalance_frequency: weekly
+  costs:
+    fees_bps: 2.0
+    slippage_bps: 5.0
+    borrow_bps: 30.0

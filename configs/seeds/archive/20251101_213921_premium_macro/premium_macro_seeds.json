@@ -1,0 +1,360 @@
+[
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "crisis_memory_momentum",
+        "expr": "ret_126d",
+        "transforms": ["divide:parkinson_20d+0.01", "multiply:macro_vix", "divide:30.0", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "liquidity_stress_reversal",
+        "expr": "turnover_20d",
+        "transforms": ["multiply:ret_5d", "multiply:-1", "divide:macro_credit_spread+0.5", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "tail_risk_filter",
+        "expr": "kurt_60d",
+        "transforms": ["subtract:3.0", "multiply:-1", "divide:vol_20d+0.01", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.5, 0.3, 0.2]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Exploits persistent volatility memory from crisis periods combined with liquidity-driven reversals and excess kurtosis penalties to avoid tail risk concentration."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "regime_adaptive_momentum",
+        "expr": "ret_60d",
+        "transforms": ["divide:hl_vol_20d+0.01", "multiply:macro_10y_treasury", "divide:macro_2y_treasury+0.5", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "inflation_pass_through",
+        "expr": "ret_21d",
+        "transforms": ["multiply:macro_inflation", "divide:3.0", "divide:vol_10d+0.01", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.65, 0.35]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Yield curve steepness conditions momentum while inflation pass-through identifies firms with pricing power during inflationary regimes."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "overnight_gap_quality",
+        "expr": "gap_z20",
+        "transforms": ["multiply:rsi_28d", "divide:50.0", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "unemployment_defensive",
+        "expr": "ret_252d",
+        "transforms": ["divide:vol_60d+0.01", "divide:macro_unemployment+3.0", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "volume_confirmation",
+        "expr": "volume_zscore_20d",
+        "transforms": ["multiply:ret_20d", "divide:parkinson_20d+0.01", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.25, 0.45, 0.3]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Combines overnight gap patterns with RSI confirmation, defensive quality during low unemployment, and volume-confirmed price moves for robust signal generation."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "fed_conditioned_quality",
+        "expr": "ret_252d",
+        "transforms": ["divide:vol_60d+0.01", "multiply:macro_fed_funds", "divide:5.0", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "sentiment_momentum",
+        "expr": "ret_20d",
+        "transforms": ["divide:vol_20d+0.01", "multiply:macro_consumer_sentiment", "divide:100.0", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "skew_alpha",
+        "expr": "skew_20d",
+        "transforms": ["multiply:macro_gdp", "divide:3.0", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "mean_reversion_overlay",
+        "expr": "zscore_5d",
+        "transforms": ["multiply:-1", "divide:macro_credit_spread+0.5", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.3, 0.3, 0.2, 0.2]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Multi-factor strategy combining rate-regime quality tilt, sentiment-driven momentum, positive skew during expansion, and credit-conditioned mean reversion."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "retail_sales_momentum",
+        "expr": "ret_60d",
+        "transforms": ["divide:vol_20d+0.01", "multiply:macro_retail_sales", "divide:5.0", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "vix_fear_reversal",
+        "expr": "ret_1d",
+        "transforms": ["multiply:-1", "multiply:macro_vix", "divide:25.0", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.8, 0.2]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Retail sales-conditioned momentum captures consumer strength while VIX-scaled daily reversal exploits panic overselling."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "liquidity_adjusted_momentum",
+        "expr": "ret_126d",
+        "transforms": ["divide:adv_20d+1000000", "multiply:1000000", "divide:vol_60d+0.01", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "gap_continuation",
+        "expr": "gap_1d",
+        "transforms": ["multiply:volume_zscore_60d", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "rsi_quality_filter",
+        "expr": "rsi_14d",
+        "transforms": ["subtract:50", "divide:50", "multiply:ret_252d", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.5, 0.25, 0.25]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Liquidity-normalized momentum with volume-confirmed gap continuation and RSI-filtered quality overlay for robust trend following."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "inflation_defensive_quality",
+        "expr": "ret_252d",
+        "transforms": ["divide:parkinson_20d+0.01", "divide:macro_inflation+1.0", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "yield_curve_momentum",
+        "expr": "ret_60d",
+        "transforms": ["divide:vol_20d+0.01", "multiply:macro_10y_treasury", "divide:10.0", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.55, 0.45]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Inflation-resistant quality stocks combined with treasury yield-conditioned momentum for balanced performance across rate regimes."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "duration_mtm_gated_by_inflation_vs_rates",
+        "expr": "ret_126d",
+        "transforms": ["divide:vol_20d+0.01", "multiply:macro_inflation", "divide:macro_fed_funds+0.5", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "quality_low_vol_when_policy_tight",
+        "expr": "vol_60d",
+        "transforms": ["multiply:-1", "multiply:macro_fed_funds", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "return_consistency_favored_under_tight_calm",
+        "expr": "ret_252d",
+        "transforms": ["divide:parkinson_20d+0.01", "multiply:macro_fed_funds", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.45, 0.35, 0.2] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Real-rate style rotation: inflation tilts toward duration-like momentum while tighter policy and calm conditions favor low-volatility and long-horizon consistency."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "stress_prefers_low_range",
+        "expr": "hl_vol_20d",
+        "transforms": ["multiply:-1", "multiply:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "calm_short_term_reversal",
+        "expr": "ret_5d",
+        "transforms": ["multiply:-1", "divide:vol_20d+0.01", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "tight_policy_defensive_low_vol",
+        "expr": "vol_60d",
+        "transforms": ["multiply:-1", "multiply:macro_fed_funds", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.5, 0.3, 0.2] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Crisis-beta toggle via proxies: high VIX rewards low-range names, calm markets favor short-term reversal, and tighter policy adds a defensive tilt to low-volatility stocks."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "credit_spread_favors_low_range",
+        "expr": "hl_vol_20d",
+        "transforms": ["multiply:-1", "multiply:macro_credit_spread", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "policy_tailrisk_penalty",
+        "expr": "kurt_60d",
+        "transforms": ["multiply:-1", "multiply:macro_fed_funds", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "calm_illiquidity_bid",
+        "expr": "adv_20d",
+        "transforms": ["multiply:-1", "divide:macro_vix", "divide:macro_fed_funds+0.5", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.4, 0.3, 0.3] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Funding-fragility rotation: wide credit spreads and tight policy reward low-range and low-tail-risk names, while calm/easy conditions permit a selective tilt toward illiquidity."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "calm_gap_follow_through",
+        "expr": "gap_z20",
+        "transforms": ["divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "volume_confirmation_in_calm",
+        "expr": "volume_zscore_20d",
+        "transforms": ["divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "stress_gap_fade",
+        "expr": "gap",
+        "transforms": ["multiply:-1", "multiply:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.45, 0.25, 0.3] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Gap-trust regime: in calm markets, statistically large gaps with volume support follow-through; under stress, gaps are liquidity shocks that tend to mean-revert."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "easy_policy_illiquidity_tilt",
+        "expr": "adv_20d",
+        "transforms": ["multiply:-1", "divide:macro_fed_funds+0.5", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "tight_policy_prefers_low_vol",
+        "expr": "vol_60d",
+        "transforms": ["multiply:-1", "multiply:macro_fed_funds", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "calm_long_horizon_consistency",
+        "expr": "ret_252d",
+        "transforms": ["divide:parkinson_20d+0.01", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.35, 0.35, 0.3] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Liquidity-cycle rotation: easy policy and low fear favor less-traded, consistent names, while tightening shifts preference toward stable, low-volatility leaders."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "inflation_supports_trend_persistence",
+        "expr": "ret_126d",
+        "transforms": ["divide:vol_20d+0.01", "multiply:macro_inflation", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "easing_strengthens_short_term_reversion",
+        "expr": "ret_10d",
+        "transforms": ["multiply:-1", "divide:vol_20d+0.01", "divide:macro_fed_funds+0.5", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "calm_consistency_filter",
+        "expr": "ret_252d",
+        "transforms": ["divide:parkinson_20d+0.01", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.4, 0.35, 0.25] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Inflation vs. easing regimes: higher inflation enhances medium-term trend persistence, while low rates strengthen short-term mean reversion; calm periods reward long-horizon consistency."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "steepener_trend_tilt",
+        "expr": "ret_60d",
+        "transforms": ["divide:vol_20d+0.01", "multiply:macro_10y_treasury", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "flattener_defensive_low_vol",
+        "expr": "vol_60d",
+        "transforms": ["multiply:-1", "multiply:macro_2y_treasury", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "yield_breadth_rsi_filter",
+        "expr": "rsi_28d",
+        "transforms": ["multiply:macro_10y_treasury", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.4, 0.4, 0.2] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Yield-curve regimes: rising long rates (steepening) favor trend and positive RSI breadth, while elevated short rates (flattening/inversion) tilt toward defensive low-volatility names."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "sentiment_gated_mtm60",
+        "expr": "ret_60d",
+        "transforms": ["divide:vol_20d+0.01", "multiply:macro_consumer_sentiment", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "retail_sales_mtm20",
+        "expr": "ret_20d",
+        "transforms": ["divide:vol_20d+0.01", "multiply:macro_retail_sales", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "calm_low_turnover_filter",
+        "expr": "turnover_20d",
+        "transforms": ["multiply:-1", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.45, 0.3, 0.25] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Risk-on consumption: strong sentiment and retail activity amplify momentum while calm regimes favor lower-turnover, stickier winners."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "unemployment_defensive_low_vol",
+        "expr": "vol_60d",
+        "transforms": ["multiply:-1", "multiply:macro_unemployment", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "growth_gated_mtm60",
+        "expr": "ret_60d",
+        "transforms": ["divide:vol_20d+0.01", "multiply:macro_gdp", "divide:macro_vix", "cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "inflation_tailrisk_penalty",
+        "expr": "kurt_20d",
+        "transforms": ["multiply:-1", "multiply:macro_inflation", "cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": { "method": "weighted_mean", "weights": [0.35, 0.4, 0.25] },
+    "post": ["cs_rank_pct_centered", "clip:-2,2", "normalize:sum_abs"],
+    "rationale": "Labor-cycle defensiveness: rising unemployment rewards low-volatility and penalizes tail risk, while healthy growth in calm markets supports medium-term momentum."
+  }
+]

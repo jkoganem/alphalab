@@ -1,0 +1,282 @@
+# Strategy Refinement Prompt (Iteration {iteration})
+
+You are an expert quantitative researcher tasked with improving alpha strategies based on backtest performance analysis.
+
+## CRITICAL: OUTPUT FORMAT REQUIREMENTS
+
+You MUST return a **valid JSON array** containing exactly {n_ideas} improved factor specifications. Your response must:
+
+1. **Start with `[` and end with `]`** - the opening and closing brackets of the JSON array
+2. **Contain NO text before or after the JSON** - no explanations, no markdown code blocks, no commentary
+3. **Be valid JSON** that can be parsed by `json.loads()` in Python
+4. **Follow the exact schema defined below**
+
+---
+
+## PERFORMANCE ANALYSIS OF PREVIOUS ITERATION
+
+### Best Strategy: {best_strategy_name}
+- **Current Score**: {score:.1f}/100 (Target: ≥ 50)
+- **Sharpe Ratio**: {sharpe:.3f} (Target: ≥ 0.70)
+- **Total Return**: {total_return:.1%}
+- **Max Drawdown**: {max_drawdown:.1%} (Target: ≤ 30%)
+- **Win Rate**: {win_rate:.1%} (Target: ≥ 50%)
+- **Sortino Ratio**: {sortino:.3f} (Target: ≥ 0.90)
+
+### What's Not Working
+{issues_list}
+
+### Most Common Failures Across All {n_strategies} Strategies
+{common_issues_list}
+
+{lofo_feedback}
+
+---
+
+## PRESCRIPTIVE GUIDANCE FOR THIS ITERATION
+
+{prescriptive_guidance}
+
+---
+
+## AVAILABLE COLUMNS (use ONLY these exact names - no exceptions):
+{columns_text}
+
+---
+
+## CRITICAL RULES:
+- **NO arithmetic on raw OHLCV** (e.g., "open - close" is FORBIDDEN)
+- **NO conditional expressions** ("?:", "if", "||", "&&" are FORBIDDEN)
+- **NO date/time logic** (e.g., "month == 3" is FORBIDDEN)
+- **NO new column creation** - use ONLY pre-computed features from the list
+- **Use column names directly** (e.g., "ret_20d", "vol_20d", "rsi_14d")
+- **Negate with leading minus for reversals** (e.g., "-ret_5d")
+
+---
+
+## JSON SCHEMA (STRICT)
+
+Each specification in the array MUST have this exact structure:
+
+```json
+{{
+  "family": "cross_sectional_rank",
+  "factors": [
+    {{
+      "name": "<factor_name>",
+      "expr": "<column_name>",
+      "transforms": ["<transform_1>", "<transform_2>", "<transform_3>"]
+    }}
+  ],
+  "combine": {{
+    "method": "weighted_mean",
+    "weights": [<array of floats summing to 1.0>]
+  }},
+  "post": ["cs_rank_pct_centered", "clip:-2,2"],
+  "rationale": "<1-2 sentence explanation>"
+}}
+```
+
+---
+
+## MANDATORY STRUCTURE (compiler-enforced):
+
+### 1. Family
+- **MUST be exactly**: `"cross_sectional_rank"`
+
+### 2. Factors (1-3 total with ONE CLEAR THESIS)
+**CRITICAL: DO NOT mix contradictory signals!**
+- **EITHER momentum factors** for trend continuation:
+  - Use `"ret_20d"` or `"ret_60d"`
+  - Works on 20-60 day horizons
+- **OR reversal factors** for mean reversion:
+  - Use `"-ret_5d"` or `"-ret_1d"` (note the minus sign!)
+  - Works on 1-5 day horizons
+- **DO NOT combine momentum + reversal** - they cancel each other out!
+- **Optional supporting factor from:**
+  - Volume: `"volume_zscore_20d"`
+  - Technical: `"rsi_14d"`, `"rsi_28d"`
+  - Volatility: `"vol_20d"`, `"vol_60d"`
+
+### 3. Transforms (CRITICAL for each factor)
+**Must include these two transforms in order:**
+1. `"cs_robust_zscore"` - Cross-sectional normalization (FIRST!)
+2. `"winsor:-3,3"` - Outlier handling
+
+**WARNING**: DO NOT use `"divide:vol_20d"` or other volatility division - this causes catastrophic failures during volatility spikes.
+
+### 4. Combine
+- **method**: MUST be `"weighted_mean"`
+- **weights**: Each weight in [0.20, 0.55] range, sum EXACTLY to 1.0
+
+### 5. Post-processing
+**Must include these two transforms:**
+1. `"cs_rank_pct_centered"` - Convert to centered ranks
+2. `"clip:-2,2"` - Final position limiting
+
+### 6. Rationale
+- 1-2 sentences explaining the single thesis (momentum OR reversal, not both)
+
+---
+
+## EVALUATION CRITERIA
+
+Strategies will be backtested and evaluated on the following metrics:
+
+### Primary Metrics
+- **Sharpe Ratio**: Risk-adjusted returns (target: ≥ 0.7)
+- **Total Returns**: Cumulative strategy performance (target: positive)
+- **Maximum Drawdown**: Largest peak-to-trough decline (target: ≤ 30%)
+
+### Secondary Metrics
+- **Number of Trades**: Sufficient trading activity (target: ≥ 100 trades)
+- **Turnover**: Portfolio churn rate (target: ≤ 5.0 daily turnover)
+
+### Scoring
+Strategies receive a weighted composite score out of 100:
+- **Sharpe Ratio** (35%): Normalized by 1.5 target
+- **Sortino Ratio** (15%): Normalized by 1.8 target
+- **Max Drawdown** (20%): Inverted penalty (0 points if >50%)
+- **Calmar Ratio** (10%): Return/Drawdown ratio, normalized by 2.0
+- **Win Rate** (5%): Percentage of profitable trades
+- **Consistency** (10%): Stability of rolling Sharpe ratio
+- **Tail Risk** (5%): 5th percentile daily return protection
+
+**Strategies scoring ≥ 50 are considered viable for production.**
+
+---
+
+## HOW TO IMPROVE FROM PREVIOUS ITERATION
+
+### If Sharpe Ratio < 0.70:
+**Root Causes:**
+- Weak signal-to-noise ratio
+- Insufficient risk adjustment
+- Single-factor strategies are too noisy
+
+**Solutions:**
+1. **Add a supporting factor** to diversify signal sources:
+   ```json
+   "factors": [
+     {"name": "momentum", "expr": "ret_60d", "transforms": ["cs_robust_zscore", "winsor:-3,3"]},
+     {"name": "volume_confirmation", "expr": "volume_zscore_20d", "transforms": ["cs_robust_zscore", "winsor:-3,3"]}
+   ],
+   "combine": {"method": "weighted_mean", "weights": [0.70, 0.30]}
+   ```
+
+2. **Use cross-sectional robust normalization** (already required):
+   - Transform: `"cs_robust_zscore"` (uses median/MAD instead of mean/std - provides automatic risk adjustment)
+
+### If Maximum Drawdown > 30%:
+**Root Causes:**
+- Extreme position concentration
+- Momentum strategies without mean reversion overlay
+- Insufficient outlier clipping
+
+**Solutions:**
+1. **Reduce position concentration**:
+   - Use `"clip:-2,2"` in post-processing (already required)
+   - Ensure centered ranks: `"cs_rank_pct_centered"`
+
+2. **NOTE**: Do NOT mix momentum and reversal factors - they cancel each other out. Choose ONE clear thesis instead.
+
+3. **Strengthen outlier handling**:
+   - Use `"winsor:-3,3"` for each factor (already required)
+
+### If Win Rate < 50%:
+**Root Causes:**
+- Pure momentum has lower win rate but higher payoff
+- Insufficient mean reversion for consistency
+
+**Solutions:**
+1. **Add mean reversion factor**:
+   ```json
+   {"name": "short_reversal", "expr": "-ret_5d", "transforms": ["cs_robust_zscore", "winsor:-3,3"]}
+   ```
+
+2. **Use RSI for oversold/overbought signals**:
+   ```json
+   {"name": "oversold_signal", "expr": "rsi_14d", "transforms": ["cs_robust_zscore", "winsor:-3,3"]}
+   ```
+
+### If Sortino Ratio is Low:
+**Root Causes:**
+- Large downside volatility
+- Momentum crashes during reversals
+
+**Solutions:**
+1. **Add volume confirmation** to avoid false breakouts:
+   ```json
+   {"name": "volume_pressure", "expr": "volume_zscore_20d", "transforms": ["cs_robust_zscore", "winsor:-3,3"]}
+   ```
+
+2. **Cross-sectional normalization** provides automatic risk adjustment (already required)
+
+---
+
+## DIVERSITY RULES ACROSS THE BATCH:
+- No two specs may use the **same set of factor expressions**
+- Ensure variety in supporting factors (mix volume, RSI, volatility)
+- Vary the thesis type (some momentum, some reversal strategies)
+- **DO NOT repeat "{best_strategy_name}" pattern** - try a genuinely different approach
+
+---
+
+## VALIDATION CHECKLIST
+
+Before submitting, verify EACH specification:
+- [ ] `family` is exactly `"cross_sectional_rank"`
+- [ ] 1-3 factors per spec
+- [ ] Clear single thesis (momentum OR reversal, not both)
+- [ ] All factors use columns from AVAILABLE COLUMNS
+- [ ] Each factor has all three required transforms in order
+- [ ] Weights sum to exactly 1.0
+- [ ] Post-processing includes both required transforms
+- [ ] Different from other specs in the batch
+- [ ] Different from previous iteration's best strategy
+- [ ] Valid JSON syntax (no trailing commas!)
+
+---
+
+## EXAMPLE OUTPUT (EXACT FORMAT REQUIRED)
+
+[
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "momentum",
+        "expr": "ret_60d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "volume_pressure",
+        "expr": "volume_zscore_20d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.70, 0.30]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2"],
+    "rationale": "Pure momentum strategy with volume confirmation using cross-sectional normalization for stable performance."
+  },
+  {
+    "family": "cross_sectional_rank",
+    "factors": [
+      {
+        "name": "reversal",
+        "expr": "-ret_5d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      },
+      {
+        "name": "oversold",
+        "expr": "rsi_14d",
+        "transforms": ["cs_robust_zscore", "winsor:-3,3"]
+      }
+    ],
+    "combine": {"method": "weighted_mean", "weights": [0.65, 0.35]},
+    "post": ["cs_rank_pct_centered", "clip:-2,2"],
+    "rationale": "Short-term mean reversion targeting oversold conditions for bounce-back opportunities."
+  }
+]
+
+**CRITICAL REMINDER**: Your response must be ONLY the JSON array - no other text!

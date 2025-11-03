@@ -1,0 +1,5 @@
+"""Alpha Backtest Lab - Leakage-aware alpha generation and statistical backtesting toolkit."""
+
+from __future__ import annotations
+
+__version__ = "0.1.0"

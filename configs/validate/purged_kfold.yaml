@@ -1,0 +1,19 @@
+# Purged K-Fold Cross-Validation Configuration
+# Prevents data leakage through temporal purging and embargo
+
+validation:
+  type: PurgedKFold
+  n_splits: 5  # 5-fold cross-validation
+  purge_gap_days: 5  # Purge 5 days before/after test set
+  embargo_days: 21  # 21-day embargo after test set
+
+  # Ensures no overlap between training and test sets
+  # Critical for time-series financial data
+
+metrics:
+  - sharpe_ratio
+  - max_drawdown
+  - calmar_ratio
+  - total_return
+  - win_rate
+  - turnover

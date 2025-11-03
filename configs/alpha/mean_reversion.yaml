@@ -1,0 +1,25 @@
+# Mean Reversion Alpha Configuration
+# Contrarian strategy betting on price reversals
+
+alpha:
+  type: MeanReversion
+  lookback_days: 20  # Short-term reversion
+  entry_threshold: 1.5  # Enter at 1.5 standard deviations
+  exit_threshold: 0.5  # Exit at 0.5 standard deviations
+
+portfolio:
+  optimizer: InverseVolatilityOptimizer
+  vol_lookback: 30
+  normalize: true
+
+risk:
+  max_gross_exposure: 1.5
+  max_position_size: 0.10  # Smaller positions for higher turnover strategy
+  volatility_target: 0.15
+
+execution:
+  rebalance_frequency: daily  # More frequent for mean reversion
+  costs:
+    fees_bps: 2.0
+    slippage_bps: 5.0
+    borrow_bps: 30.0
